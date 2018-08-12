@@ -117,44 +117,76 @@ contract Blocrowd is Ownable {
     
     // struct for investor
     struct investor {
-        uint weight;
-        uint voted;
-        address delegate;
+        uint fund;                              // funded eth
+        uint weight;                            // vote (ex. 1 eth = 1 vote)
+        uint voted;                             // voted checker
+        mapping(address => uint) delegated;     // delegated vote
     }
     
     // struct for voting of each project step
     struct proposal {
-        uint peroid;
-        uint voteQuota;
+        uint peroid;        // peroid of proposal
+        uint voteQuota;     // Quota of voting (at least, threshold)
     }
 
+    // Creator and manager
     address public creator;
-    address public chairperson;
+    address public manager;
+    
+    // investors
     mapping(address => investor) public investors;
+    
+    // Number of project proposal (voting step)
     mapping(uint => proposal) public proposals;
     uint public numOfProposal;
+    
+    // Soft cap and rate of vote (ex. 1 vote = 1 eth)
+    uint public softCap;
+    uint public rate;
 
-
-    event Voting(address indexed previousOwner);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    // Event for Blocrowd
+    event Invested(address _investor, uint _fund);
+    event Refunded(address indexed previousOwner);
+    event ProposalStart(address indexed previousOwner);
+    event ProposalEnd(address indexed previousOwner);
+    event Voted(address indexed previousOwner);
+    event Delegated(address indexed previousOwner, address indexed newOwner);
     
     /**
      * @dev Constructor to set creator and proposals.
      */
-    constructor(address _creator, uint[] _period, uint[] _voteQuota) public {
+    constructor(address _creator, uint _softCap, uint _rate, uint[] _period, uint[] _voteQuota) public {
+        // Set default values;
         creator = _creator;
+        softCap = _softCap;
+        rate = _rate;
+        numOfProposal = _period.length;
         
-        uint n = _period.length;
-        
-        numOfProposal = n;
+        // Set proposals
+        uint n = numOfProposal;
         uint count = 0;
         while (count < n)
         {
             proposals[count].peroid = _period[count];
             proposals[count].voteQuota = _voteQuota[count];
-            
             count++;
         }
+    }
+    
+    /**
+     * @dev Function to invest ethereum to _creator
+     * @param _accountNumber the bytes32 to deposit.
+     * @return boolean flag if open success.
+     */
+    function invest(address _creator) payable public returns (bool isIndeed) {
+        if(msg.value==0) revert();
+        if(_creator!=creator) revert();
+        
+        investors[msg.sender].fund = investors[msg.sender].fund.add(msg.value);
+        investors[msg.sender].weight = investors[msg.sender].fund.mul(rate);
+        
+        emit Invested(msg.sender, msg.value);
+        return true;
     }
 
     /**
@@ -168,7 +200,8 @@ contract Blocrowd is Ownable {
         
         proposals[numOfProposal].peroid = _period;
         proposals[numOfProposal].voteQuota = _voteQuota;
-
+        
+        return true;
     }
 
     /// Give $(toVoter) the right to vote on this ballot.
@@ -212,4 +245,3 @@ contract Blocrowd is Ownable {
             }
     }
 }
-
