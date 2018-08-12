@@ -1,7 +1,112 @@
 pragma solidity ^0.4.24;
 
-import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
-import "openzeppelin-solidity/contracts/math/SafeMath.sol";
+/**
+ * @title SafeMath
+ * @dev Math operations with safety checks that throw on error
+ */
+library SafeMath {
+
+    /**
+     * @dev Multiplies two numbers, throws on overflow.
+     */
+    function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
+         // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
+         // benefit is lost if 'b' is also tested.
+         // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
+         if (a == 0) {
+                return 0;
+         }
+
+         c = a;
+         assert(c / a == b);
+         return c;
+    }
+
+    /**
+     * @dev Integer division of two numbers, truncating the quotient.
+     */
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+         // assert(b > 0); // Solidity automatically throws when dividing by 0
+         // uint256 c = a / b;
+         // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+         return a / b;
+    }
+
+    /**
+     * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
+     */
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+         assert(b <= a);
+         return a - b;
+    }
+
+    /**
+     * @dev Adds two numbers, throws on overflow.
+     */
+    function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
+         c = a + b;
+         assert(c >= a);
+         return c;
+    }
+}
+
+
+/**
+ * @title Ownable
+ * @dev The Ownable contract has an owner address, and provides basic authorization control
+ * functions, this simplifies the implementation of "user permissions".
+ */
+contract Ownable {
+    address public owner;
+    
+    event OwnershipRenounced(address indexed previousOwner);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /**
+     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+     * account.
+     */
+    constructor() public {
+         owner = msg.sender;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+         require(msg.sender == owner);
+         _;
+    }
+
+    /**
+     * @dev Allows the current owner to relinquish control of the contract.
+     * @notice Renouncing to ownership will leave the contract without an owner.
+     * It will not be possible to call the functions with the `onlyOwner`
+     * modifier anymore.
+     */
+    function renounceOwnership() public onlyOwner {
+         emit OwnershipRenounced(owner);
+         owner = address(0);
+    }
+
+    /**
+     * @dev Allows the current owner to transfer control of the contract to a newOwner.
+     * @param _newOwner The address to transfer ownership to.
+     */
+    function transferOwnership(address _newOwner) public onlyOwner {
+         _transferOwnership(_newOwner);
+    }
+
+    /**
+     * @dev Transfers control of the contract to a newOwner.
+     * @param _newOwner The address to transfer ownership to.
+     */
+    function _transferOwnership(address _newOwner) internal {
+         require(_newOwner != address(0));
+         emit OwnershipTransferred(owner, _newOwner);
+         owner = _newOwner;
+    }
+}
 
 /**
  * @title Blocrowd
@@ -10,40 +115,60 @@ import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 contract Blocrowd is Ownable {
     using SafeMath for uint;
     
-    address public creator;
-    address[] public investors;
-    
-    struct Voter {
+    // struct for investor
+    struct investor {
         uint weight;
-        bool voted;
-        uint8 vote;
+        uint voted;
         address delegate;
     }
-    struct Proposal {
-        uint voteCount;
+    
+    // struct for voting of each project step
+    struct proposal {
+        uint peroid;
+        uint voteQuota;
     }
 
-    address chairperson;
-    mapping(address => Voter) voters;
-    Proposal[] proposals;
+    address public creator;
+    address public chairperson;
+    mapping(address => investor) public investors;
+    mapping(uint => proposal) public proposals;
+    uint public numOfProposal;
 
 
     event Voting(address indexed previousOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     
     /**
-     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
-     * account.
+     * @dev Constructor to set creator and proposals.
      */
-    constructor(address _creator, address[] _investors) public {
+    constructor(address _creator, uint[] _period, uint[] _voteQuota) public {
         creator = _creator;
+        
+        uint n = _period.length;
+        
+        numOfProposal = n;
+        uint count = 0;
+        while (count < n)
+        {
+            proposals[count].peroid = _period[count];
+            proposals[count].voteQuota = _voteQuota[count];
+            
+            count++;
+        }
     }
 
-    /// Create a new ballot with $(_numProposals) different proposals.
-    function Ballot(uint8 _numProposals) public {
-        chairperson = msg.sender;
-        voters[chairperson].weight = 1;
-        proposals.length = _numProposals;
+    /**
+     * @dev Create an additional proposal with peroid, and Quota.
+     * @param _token the address to get token sell orders.
+     * @param _token the address to get token sell orders.
+     * @return boolean flag if add success.
+     */ 
+    function addProposal(uint _period, uint _voteQuota) onlyOwner public {
+        numOfProposal = numOfProposal.add(1);
+        
+        proposals[numOfProposal].peroid = _period;
+        proposals[numOfProposal].voteQuota = _voteQuota;
+
     }
 
     /// Give $(toVoter) the right to vote on this ballot.
