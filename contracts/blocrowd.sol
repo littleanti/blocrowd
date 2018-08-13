@@ -121,12 +121,16 @@ contract Blocrowd is Ownable {
         uint weight;                            // vote (ex. 1 eth = 1 vote)
         uint voted;                             // voted checker
         mapping(address => uint) delegated;     // delegated vote
+        address[] delegatedList;                // List of address which delegates vote to me
+        uint investorPointer;                   // index of investorList
     }
     
     // struct for voting of each project step
     struct proposal {
+        uint voted;         // num of voted in this proposal
         uint peroid;        // peroid of proposal
         uint voteQuota;     // Quota of voting (at least, threshold)
+        bool started;       // started: true, not yet/end: false
     }
 
     // Creator and manager
@@ -135,22 +139,27 @@ contract Blocrowd is Ownable {
     
     // investors
     mapping(address => investor) public investors;
+    address[] investorList;
+    uint public numOfInvestor;
     
     // Number of project proposal (voting step)
     mapping(uint => proposal) public proposals;
     uint public numOfProposal;
+    uint public currentProposal;
     
     // Soft cap and rate of vote (ex. 1 vote = 1 eth)
     uint public softCap;
     uint public rate;
 
-    // Event for Blocrowd
+    // Event for Blocrowd related to fund.
     event Invested(address _investor, uint _fund);
-    event Refunded(address indexed previousOwner);
-    event ProposalStart(address indexed previousOwner);
-    event ProposalEnd(address indexed previousOwner);
+    event Refunded(address _investor, uint _fund);
+    // Event for Blocrowd related to vote.
+    event ProposalAdded(uint _numOfproposal, uint _period, uint _voteQuota);
+    event ProposalStarted(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
+    event ProposalEnded(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
     event Voted(address indexed previousOwner);
-    event Delegated(address indexed previousOwner, address indexed newOwner);
+    event Delegated(address _investor, uint _delegator, uint _amountOfWeight);
     
     /**
      * @dev Constructor to set creator and proposals.
@@ -175,12 +184,19 @@ contract Blocrowd is Ownable {
     
     /**
      * @dev Function to invest ethereum to _creator
-     * @param _accountNumber the bytes32 to deposit.
+     * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
     function invest(address _creator) payable public returns (bool isIndeed) {
         if(msg.value==0) revert();
         if(_creator!=creator) revert();
+        
+        // Increase number of Investors when first funding.
+        if (investors[msg.sender].fund==0)
+        {
+            investors[msg.sender].investorPointer = investorList.push(msg.sender)-1;
+            numOfInvestor++;
+        }
         
         investors[msg.sender].fund = investors[msg.sender].fund.add(msg.value);
         investors[msg.sender].weight = investors[msg.sender].fund.mul(rate);
@@ -188,43 +204,129 @@ contract Blocrowd is Ownable {
         emit Invested(msg.sender, msg.value);
         return true;
     }
+    
+    /**
+     * @dev Function to refund ethereum to invester.
+     * @param _creator the address of creator.
+     * @return boolean flag if open success.
+     */
+    function refund(address _creator) public returns (bool isIndeed) {
+        if(_creator!=creator) revert();
+        
+        uint count = 0;
+        while (count < numOfInvestor)
+        {
+            if (!investorList[count].send(investors[investorList[count]].fund)) revert();
+            count++;
+        }
+
+        emit Refunded(investorList[count], investors[investorList[count]].fund);
+        return true;
+    }
 
     /**
      * @dev Create an additional proposal with peroid, and Quota.
-     * @param _token the address to get token sell orders.
-     * @param _token the address to get token sell orders.
+     * @param _period the uint to set peroid of voting.
+     * @param _voteQuota the uint to set threshold of voting.
      * @return boolean flag if add success.
      */ 
-    function addProposal(uint _period, uint _voteQuota) onlyOwner public {
+    function addProposal(uint _period, uint _voteQuota) onlyOwner public returns(bool isIndeed) {
+        if(_period==0) revert();
+        if(_voteQuota>100) revert();
+        
         numOfProposal = numOfProposal.add(1);
         
         proposals[numOfProposal].peroid = _period;
         proposals[numOfProposal].voteQuota = _voteQuota;
         
+        emit ProposalAdded(numOfProposal, _period, _voteQuota);
         return true;
     }
 
-    /// Give $(toVoter) the right to vote on this ballot.
-    /// May only be called by $(chairperson).
-    function giveRightToVote(address toVoter) public {
-        if (msg.sender != chairperson || voters[toVoter].voted) return;
-        voters[toVoter].weight = 1;
+    /**
+     * @dev delegate an vote to evaluator.
+     * @param _to the address to delegate my weight of vote.
+     * @param _amountOfWeight the uint to set the number of weight delegated.
+     * @return boolean flag if add success.
+     */ 
+    function delegate(address _to, uint _amountOfWeight) public returns(bool isIndeed) {
+        if (investors[msg.sender].weight<_amountOfWeight) revert();
+        if (investors[_to].fund==0) revert();
+        
+        // add weight to _to and sub weight from msg.sender
+        investors[_to].delegated[msg.sender] = investors[_to].delegated[msg.sender].add(_amountOfWeight);
+        investors[_to].delegatedList.push(msg.sender);
+        investors[msg.sender].weight = investors[msg.sender].weight.sub(_amountOfWeight);
+        
+        emit Delegated(msg.sender, _to, _amountOfWeight);
+        return true;
+    }
+    
+    /**
+     * @dev Start voting in proposal x.
+     * @return boolean flag if add success.
+     */ 
+    function startProposal() onlyOwner public returns(bool isIndeed) {
+        if(currentProposal>=numOfProposal) revert();
+        
+        // Start proposal
+        proposals[currentProposal].started = true;
+
+        // Set end time
+        proposals[currentProposal].peroid = block.timestamp + proposals[currentProposal].peroid;
+        
+        emit ProposalStarted(creator, currentProposal, proposals[currentProposal].voteQuota, proposals[currentProposal].peroid);
+        return true;
+    }
+    
+    /**
+     * @dev End voting in proposal x.
+     * @return boolean flag if add success.
+     */ 
+    function endProposal() onlyOwner public returns(bool isIndeed) {
+        if(currentProposal>=numOfProposal) revert();
+        if(block.timestamp<=proposals[currentProposal].peroid) revert();
+        
+        // End proposal
+        proposals[currentProposal].started = false;
+        
+        // go to next proposal 
+        currentProposal++;
+
+        emit ProposalEnded(creator, currentProposal-1, proposals[currentProposal-1].voted, proposals[currentProposal-1].peroid);
+        return true;
+    }
+            
+    // struct for voting of each project step
+    struct proposal {
+        uint peroid;        // peroid of proposal
+        uint voteQuota;     // Quota of voting (at least, threshold)
     }
 
-    /// Delegate your vote to the voter $(to).
-    function delegate(address to) public {
-        Voter storage sender = voters[msg.sender]; // assigns reference
-        if (sender.voted) return;
-        while (voters[to].delegate != address(0) && voters[to].delegate != msg.sender)
-            to = voters[to].delegate;
-        if (to == msg.sender) return;
-        sender.voted = true;
-        sender.delegate = to;
-        Voter storage delegateTo = voters[to];
-        if (delegateTo.voted)
-            proposals[delegateTo.vote].voteCount += sender.weight;
-        else
-            delegateTo.weight += sender.weight;
+    // Creator and manager
+    address public creator;
+    address public manager;
+    
+    // investors
+    mapping(address => investor) public investors;
+    address[] investorList;
+    uint public numOfInvestor;
+    
+    // Number of project proposal (voting step)
+    mapping(uint => proposal) public proposals;
+    uint public numOfProposal;
+    uint public currentProposal;
+        
+        
+        
+        
+        numOfProposal = numOfProposal.add(1);
+        
+        proposals[numOfProposal].peroid = _period;
+        proposals[numOfProposal].voteQuota = _voteQuota;
+        
+        emit ProposalAdded(numOfProposal, _period, _voteQuota);
+        return true;
     }
 
     /// Give a single vote to proposal $(toProposal).
@@ -245,3 +347,4 @@ contract Blocrowd is Ownable {
             }
     }
 }
+
