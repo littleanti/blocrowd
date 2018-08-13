@@ -13,7 +13,7 @@ library SafeMath {
          // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
          // benefit is lost if 'b' is also tested.
          // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-         if (a == 0) {
+         if(a == 0) {
                 return 0;
          }
 
@@ -130,6 +130,7 @@ contract Blocrowd is Ownable {
         uint voted;         // num of voted in this proposal
         uint peroid;        // peroid of proposal
         uint voteQuota;     // Quota of voting (at least, threshold)
+        uint instalment;    // rate of instalment
         bool started;       // started: true, not yet/end: false
     }
 
@@ -147,39 +148,78 @@ contract Blocrowd is Ownable {
     uint public numOfProposal;
     uint public currentProposal;
     
-    // Soft cap and rate of vote (ex. 1 vote = 1 eth)
+    // Total fund, remained fund, soft cap, hard cap and rate of vote (ex. 1 vote = 1 eth)
+    uint public totalFund;
+    uint public remainedFund;
     uint public softCap;
+    uint public hardCap;
     uint public rate;
+    uint public projectPeriod;
 
     // Event for Blocrowd related to fund.
     event Invested(address _investor, uint _fund);
     event Refunded(address _investor, uint _fund);
+    event InvestSuccessed(address _creator, uint _fund, uint _softCap);
+    event InvestFailed(address _creator, uint _fund, uint _softCap);
     // Event for Blocrowd related to vote.
     event ProposalAdded(uint _numOfproposal, uint _period, uint _voteQuota);
     event ProposalStarted(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
     event ProposalEnded(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
-    event Voted(address indexed previousOwner);
+    event Voted(address _investor, uint _indexOfProposal, uint _voted, uint _remainedWeight);
     event Delegated(address _investor, uint _delegator, uint _amountOfWeight);
+    event EndProject(address _creator, uint _totalFund, uint _numOfProposal, uint _numOfInvestor);
     
     /**
      * @dev Constructor to set creator and proposals.
      */
-    constructor(address _creator, uint _softCap, uint _rate, uint[] _period, uint[] _voteQuota) public {
+    constructor(address _creator, uint _softCap, uint _hardCap, uint _rate, uint _projectPeriod, uint[] _period, uint[] _voteQuota, uint[] _instalment) public {
         // Set default values;
         creator = _creator;
         softCap = _softCap;
+        hardCap = _hardCap;
         rate = _rate;
+        projectPeriod = block.timestamp.add(_projectPeriod);
         numOfProposal = _period.length;
         
         // Set proposals
-        uint n = numOfProposal;
+        uint instalmentChecker = 0;
         uint count = 0;
-        while (count < n)
+        while (count < numOfProposal)
         {
+            if(_voteQuota[count]>10000) revert();
             proposals[count].peroid = _period[count];
             proposals[count].voteQuota = _voteQuota[count];
+            proposals[count].instalment = _instalment[count];
+            instalmentChecker = instalmentChecker.add(_instalment[count]);
             count++;
         }
+        
+        if(instalmentChecker!=10000) revert();
+    }
+    
+    /**
+     * @dev Function to refund ethereum to invester.
+     * @param _creator the address of creator.
+     * @param _amountOfRefund the uint of refund amount.
+     * @return boolean flag if open success.
+     */
+    function refund(address _creator, uint _amountOfRefund) internal returns (bool isIndeed) {
+        if(_creator!=creator) revert();
+        if(_amountOfRefund>totalFund) revert();
+        
+        uint count = 0;
+        while (count < numOfInvestor)
+        {
+            if(!investorList[count].send(investors[investorList[count]].fund.mul(_amountOfRefund).div(totalFund))) revert();
+            totalFund = totalFund.sub(investors[investorList[count]].fund.mul(_amountOfRefund).div(totalFund));
+            count++;
+        }
+        
+        // reset totalFund
+        if(!manager.send(totalFund)) revert();
+        
+        emit Refunded(investorList[count], investors[investorList[count]].fund);
+        return true;
     }
     
     /**
@@ -190,38 +230,50 @@ contract Blocrowd is Ownable {
     function invest(address _creator) payable public returns (bool isIndeed) {
         if(msg.value==0) revert();
         if(_creator!=creator) revert();
+        if(totalFund>hardCap) revert();
         
         // Increase number of Investors when first funding.
-        if (investors[msg.sender].fund==0)
+        if(investors[msg.sender].fund==0)
         {
             investors[msg.sender].investorPointer = investorList.push(msg.sender)-1;
             numOfInvestor++;
         }
         
+        // set fund and weight
         investors[msg.sender].fund = investors[msg.sender].fund.add(msg.value);
         investors[msg.sender].weight = investors[msg.sender].fund.mul(rate);
+        
+        // add total value
+        totalFund = totalFund.add(msg.value);
         
         emit Invested(msg.sender, msg.value);
         return true;
     }
     
     /**
-     * @dev Function to refund ethereum to invester.
+     * @dev Function to end invest from _creator
      * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
-    function refund(address _creator) public returns (bool isIndeed) {
+    function endInvest(address _creator) onlyOwner public returns (bool isIndeed) {
         if(_creator!=creator) revert();
+        if(block.timestamp<=projectPeriod) revert();
         
-        uint count = 0;
-        while (count < numOfInvestor)
+        // check fund is over softCap or not
+        if(totalFund>=softCap)
         {
-            if (!investorList[count].send(investors[investorList[count]].fund)) revert();
-            count++;
+            // start project
+            remainedFund = totalFund;
+            emit InvestSuccessed(creator, totalFund, softCap);
+            return true;
         }
-
-        emit Refunded(investorList[count], investors[investorList[count]].fund);
-        return true;
+        else
+        {
+            // refund fund
+            refund(creator, totalFund);
+            emit InvestFailed(creator, totalFund, softCap);
+            return false;
+        }
     }
 
     /**
@@ -231,6 +283,7 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */ 
     function addProposal(uint _period, uint _voteQuota) onlyOwner public returns(bool isIndeed) {
+        //Todo: need to revise add proposal.
         if(_period==0) revert();
         if(_voteQuota>100) revert();
         
@@ -250,8 +303,8 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */ 
     function delegate(address _to, uint _amountOfWeight) public returns(bool isIndeed) {
-        if (investors[msg.sender].weight<_amountOfWeight) revert();
-        if (investors[_to].fund==0) revert();
+        if(investors[msg.sender].weight<_amountOfWeight) revert();
+        if(investors[_to].fund==0) revert();
         
         // add weight to _to and sub weight from msg.sender
         investors[_to].delegated[msg.sender] = investors[_to].delegated[msg.sender].add(_amountOfWeight);
@@ -263,7 +316,7 @@ contract Blocrowd is Ownable {
     }
     
     /**
-     * @dev Start voting in proposal x.
+     * @dev Start voting in proposal in currentProposal.
      * @return boolean flag if add success.
      */ 
     function startProposal() onlyOwner public returns(bool isIndeed) {
@@ -280,7 +333,7 @@ contract Blocrowd is Ownable {
     }
     
     /**
-     * @dev End voting in proposal x.
+     * @dev End voting in proposal in currentProposal.
      * @return boolean flag if add success.
      */ 
     function endProposal() onlyOwner public returns(bool isIndeed) {
@@ -290,61 +343,63 @@ contract Blocrowd is Ownable {
         // End proposal
         proposals[currentProposal].started = false;
         
-        // go to next proposal 
-        currentProposal++;
-
-        emit ProposalEnded(creator, currentProposal-1, proposals[currentProposal-1].voted, proposals[currentProposal-1].peroid);
-        return true;
+        uint count = 0;
+        // if pass vote
+        if(proposals[currentProposal].voted >= totalFund.mul(rate).mul(proposals[currentProposal].voteQuota).div(10000))
+        {
+            // refill weight of investors
+            while (count < numOfInvestor)
+            {
+                investors[investorList[count]].weight = investors[investorList[count]].fund.mul(rate);
+                count++;
+            }
+            
+            // send instalment to creator, and sub remainedFund
+            creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000));
+            remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
+            
+            // go to next proposal 
+            currentProposal++;
+    
+            emit ProposalEnded(creator, currentProposal-1, proposals[currentProposal-1].voted, proposals[currentProposal-1].peroid);
+            return true;
+        }
+        //if unpass vote
+        else
+        {
+            // refund left fund to investors
+            refund(creator, remainedFund);
+            return false;
+        }
     }
             
-    // struct for voting of each project step
-    struct proposal {
-        uint peroid;        // peroid of proposal
-        uint voteQuota;     // Quota of voting (at least, threshold)
-    }
-
-    // Creator and manager
-    address public creator;
-    address public manager;
-    
-    // investors
-    mapping(address => investor) public investors;
-    address[] investorList;
-    uint public numOfInvestor;
-    
-    // Number of project proposal (voting step)
-    mapping(uint => proposal) public proposals;
-    uint public numOfProposal;
-    uint public currentProposal;
+    /**
+     * @dev Vote in proposal in currentProposal.
+     * @param _creator the address of the creator.
+     * @param _amountOfWeight the uint to set the number of weight voted.
+     * @return boolean flag if add success.
+     */ 
+    function vote(uint _amountOfWeight) public returns (bool isIndeed) {
+        //Todo: need to consider Delegated vote.
+        if(investors[msg.sender].weight==0) revert();
+        if(_amountOfWeight>investors[msg.sender].sub(investors[msg.sender].voted)) revert();
         
+        // vote
+        proposals[currentProposal].voted = proposals[currentProposal].voted.add(_amountOfWeight);
+        investors[msg.sender].voted = investors[msg.sender].voted.add(_amountOfWeight);
         
-        
-        
-        numOfProposal = numOfProposal.add(1);
-        
-        proposals[numOfProposal].peroid = _period;
-        proposals[numOfProposal].voteQuota = _voteQuota;
-        
-        emit ProposalAdded(numOfProposal, _period, _voteQuota);
+        emit Voted(msg.sender, currentProposal, investors[msg.sender].voted, investors[msg.sender].weight.sub(investors[msg.sender].voted));
         return true;
     }
-
-    /// Give a single vote to proposal $(toProposal).
-    function vote(uint8 toProposal) public {
-        Voter storage sender = voters[msg.sender];
-        if (sender.voted || toProposal >= proposals.length) return;
-        sender.voted = true;
-        sender.vote = toProposal;
-        proposals[toProposal].voteCount += sender.weight;
-    }
-
-    function winningProposal() public constant returns (uint8 _winningProposal) {
-        uint256 winningVoteCount = 0;
-        for (uint8 prop = 0; prop < proposals.length; prop++)
-            if (proposals[prop].voteCount > winningVoteCount) {
-                winningVoteCount = proposals[prop].voteCount;
-                _winningProposal = prop;
-            }
+    
+    /**
+     * @dev End project of creator.
+     * @return boolean flag if add success.
+     */ 
+    function endProject() onlyOwner public returns (bool isIndeed) {
+        if(!manager.send(remainedFund)) revert();
+            
+        emit EndProject(creator, totalFund, numOfProposal, numOfInvestor);
+        return true;
     }
 }
-
