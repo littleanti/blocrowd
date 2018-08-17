@@ -166,7 +166,7 @@ contract Blocrowd is Ownable {
     event ProposalStarted(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
     event ProposalEnded(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
     event Voted(address _investor, uint _indexOfProposal, uint _voted, uint _remainedWeight);
-    event Delegated(address _investor, uint _delegator, uint _amountOfWeight);
+    event Delegated(address _investor, address _delegator, uint _amountOfWeight);
     event EndProject(address _creator, uint _totalFund, uint _numOfProposal, uint _numOfInvestor);
     
     /**
@@ -355,7 +355,7 @@ contract Blocrowd is Ownable {
             }
             
             // send instalment to creator, and sub remainedFund
-            creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000));
+            creator.transfer(totalFund.mul(proposals[currentProposal].instalment).div(10000));
             remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
             
             // go to next proposal 
@@ -375,14 +375,13 @@ contract Blocrowd is Ownable {
             
     /**
      * @dev Vote in proposal in currentProposal.
-     * @param _creator the address of the creator.
      * @param _amountOfWeight the uint to set the number of weight voted.
      * @return boolean flag if add success.
      */ 
     function vote(uint _amountOfWeight) public returns (bool isIndeed) {
         //Todo: need to consider Delegated vote.
         if(investors[msg.sender].weight==0) revert();
-        if(_amountOfWeight>investors[msg.sender].sub(investors[msg.sender].voted)) revert();
+        if(_amountOfWeight>investors[msg.sender].weight.sub(investors[msg.sender].voted)) revert();
         
         // vote
         proposals[currentProposal].voted = proposals[currentProposal].voted.add(_amountOfWeight);
