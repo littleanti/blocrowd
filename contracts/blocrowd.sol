@@ -5,26 +5,25 @@ pragma solidity ^0.4.24;
  * @dev Math operations with safety checks that throw on error
  */
 library SafeMath {
-
     /**
-     * @dev Multiplies two numbers, throws on overflow.
-     */
+    * @dev Multiplies two numbers, throws on overflow.
+    */
     function mul(uint256 a, uint256 b) internal pure returns (uint256 c) {
-        // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
-        // benefit is lost if 'b' is also tested.
-        // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-        if(a == 0) {
-            return 0;
-        }
+    // Gas optimization: this is cheaper than asserting 'a' not being zero, but the
+    // benefit is lost if 'b' is also tested.
+    // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
+    if (a == 0) {
+        return 0;
+    }
 
-        c = a;
+        c = a * b;
         assert(c / a == b);
         return c;
     }
 
     /**
-     * @dev Integer division of two numbers, truncating the quotient.
-     */
+    * @dev Integer division of two numbers, truncating the quotient.
+    */
     function div(uint256 a, uint256 b) internal pure returns (uint256) {
         // assert(b > 0); // Solidity automatically throws when dividing by 0
         // uint256 c = a / b;
@@ -33,23 +32,22 @@ library SafeMath {
     }
 
     /**
-     * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
-     */
+    * @dev Subtracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
+    */
     function sub(uint256 a, uint256 b) internal pure returns (uint256) {
         assert(b <= a);
         return a - b;
     }
 
     /**
-     * @dev Adds two numbers, throws on overflow.
-     */
+    * @dev Adds two numbers, throws on overflow.
+    */
     function add(uint256 a, uint256 b) internal pure returns (uint256 c) {
         c = a + b;
         assert(c >= a);
         return c;
     }
 }
-
 
 /**
  * @title Ownable
@@ -58,49 +56,52 @@ library SafeMath {
  */
 contract Ownable {
     address public owner;
-    
+
     event OwnershipRenounced(address indexed previousOwner);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event OwnershipTransferred(
+        address indexed previousOwner,
+        address indexed newOwner
+    );
 
     /**
-     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
-     * account.
-     */
+    * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+    * account.
+    */
     constructor() public {
         owner = msg.sender;
     }
 
     /**
-     * @dev Throws if called by any account other than the owner.
-     */
+    * @dev Throws if called by any account other than the owner.
+    */
     modifier onlyOwner() {
         require(msg.sender == owner);
         _;
     }
 
     /**
-     * @dev Allows the current owner to relinquish control of the contract.
-     * @notice Renouncing to ownership will leave the contract without an owner.
-     * It will not be possible to call the functions with the `onlyOwner`
-     * modifier anymore.
-     */
+    * @dev Allows the current owner to relinquish control of the contract.
+    * @notice Renouncing to ownership will leave the contract without an owner.
+    * It will not be possible to call the functions with the `onlyOwner`
+    * modifier anymore.
+    */
     function renounceOwnership() public onlyOwner {
         emit OwnershipRenounced(owner);
         owner = address(0);
     }
 
     /**
-     * @dev Allows the current owner to transfer control of the contract to a newOwner.
-     * @param _newOwner The address to transfer ownership to.
-     */
+    * @dev Allows the current owner to transfer control of the contract to a newOwner.
+    * @param _newOwner The address to transfer ownership to.
+    */
     function transferOwnership(address _newOwner) public onlyOwner {
         _transferOwnership(_newOwner);
     }
 
     /**
-     * @dev Transfers control of the contract to a newOwner.
-     * @param _newOwner The address to transfer ownership to.
-     */
+    * @dev Transfers control of the contract to a newOwner.
+    * @param _newOwner The address to transfer ownership to.
+    */
     function _transferOwnership(address _newOwner) internal {
         require(_newOwner != address(0));
         emit OwnershipTransferred(owner, _newOwner);
@@ -132,8 +133,10 @@ contract Blocrowd is Ownable {
     // struct for voting of each project step
     struct proposal {
         uint voted;         // num of voted in this proposal
+        uint favor;         // num of voted favor in this proposal
+        uint oppose;        // num of voted oppose in this proposal
         uint peroid;        // peroid of proposal
-        uint voteQuorum;     // Quorum of voting (at least)
+        uint voteQuorum;    // Quorum of voting (at least)
         uint voteQuota;     // Quota of voting (at least, threshold)
         uint instalment;    // rate of instalment
         bool started;       // started: true, not yet/end: false
@@ -148,19 +151,23 @@ contract Blocrowd is Ownable {
     address[] investorList;
     uint public numOfInvestor;
     
+    // delegators
+    uint public numOfDelegator;
+    
     // Number of project proposal (voting step)
     mapping(uint => proposal) public proposals;
     uint public numOfProposal;
     uint public currentProposal;
     uint public currentInstalmented;
     
-    // Total fund, remained fund, soft cap, hard cap and rate of vote (ex. 1 vote = 1 eth)
-    uint public totalFund;
-    uint public remainedFund;
-    uint public softCap;
-    uint public hardCap;
-    uint public rate;
-    uint public projectPeriod;
+    // Total fund, total vote, remained fund, soft cap, hard cap and rate of vote (ex. 1 vote = 1 eth)
+    uint public totalFund;      // wei
+    uint public totalVote;      // 10^18 wei / rate = num of vote
+    uint public remainedFund;   // wei
+    uint public softCap;        // wei
+    uint public hardCap;        // wei
+    uint public rate;           // 10^18 wei / rate = num of vote
+    uint public projectPeriod;  // unix timestamp
 
     // Project Desc.
     string public projectName;
@@ -174,8 +181,8 @@ contract Blocrowd is Ownable {
     event ProposalAdded(uint _numOfproposal, uint _proposalIndex, uint _period, uint _voteQuota, uint _instalment);
     event ProposalStarted(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
     event ProposalEnded(address _creator, uint _indexOfProposal, uint _endTime, uint _voteQuota);
-    event Voted(address _investor, uint _indexOfProposal, uint _voted, uint _remainedWeight);
-    event DelegatedVoted(address _delegator, uint _indexOfProposal, uint _voted, uint _remainedWeight);
+    event Voted(address _investor, uint _indexOfProposal, uint _voted, bool _isFavor, uint _remainedVote);
+    event DelegatedVoted(address _delegator, uint _indexOfProposal, uint _voted, bool _isFavor, uint _remainedVote);
     event Delegated(address _investor, address _delegator, uint _amountOfVote);
     event UnDelegated(address _investor, address _delegator, uint _amountOfVote);
     event EndProject(address _creator, uint _totalFund, uint _numOfProposal, uint _numOfInvestor);
@@ -186,7 +193,7 @@ contract Blocrowd is Ownable {
     constructor(address _creator, string _projectName, uint _softCap, uint _hardCap, uint _rate, uint _projectPeriod, uint[] _period, uint[] _voteQuorum, uint[] _voteQuota, uint[] _instalment) public {
         if(_softCap==0) revert();
         if(_hardCap==0) revert();
-        if(rate==0) revert();
+        if(_rate==0) revert();
         if(_projectPeriod<1 days) revert();
         if(_period.length==0) revert();
 
@@ -218,7 +225,59 @@ contract Blocrowd is Ownable {
         if(instalmentChecker!=10000) revert();  // Total percentage is 100.00 %
     }
     
-    //ToDo: need to implement get Functions (ex. get my state, get proposals, get proposal state)
+    //ToDo: need to implement get Functions (numberOfDelegator, get my delegate state) 
+   
+    /**
+     * @dev Function to get total number of investors.
+     * @return total number of investors.
+     */
+    function getTotalInvestor() private onlyOwner view returns (uint total) {
+        return numOfInvestor;
+    }
+    
+    /**
+     * @dev Function to get total fund.
+     * @return total raised fund.
+     */
+    function getTotalFund() private onlyOwner view returns (uint total) {
+        return totalFund;
+    }
+
+    /**
+     * @dev Function to get invester's fund.
+     * @param _invester the address of invester.
+     * @return amount of invester's fund.
+     */
+    function getFundOf(address _invester) private onlyOwner view returns (uint amount) {
+        return investors[_invester].fund;
+    }
+
+    /**
+     * @dev Function to get the number of voted and total vote of current proposal.
+     * @param _currentProposal the current proposal phase among proposals.
+     * @return amount of voted and total vote of current proposal.
+     */
+    function getStateVote(uint _currentProposal) private onlyOwner view returns (uint amount, uint total) {
+        return (proposals[_currentProposal].voted, totalVote);
+    }
+
+    /**
+     * @dev Function to get the number of voted favor and oppose vote of current proposal.
+     * @param _currentProposal the current proposal phase among proposals.
+     * @return amount of voted favor and oppose vote of current proposal.
+     */
+    function getResultVote(uint _currentProposal) private onlyOwner view returns (uint favor, uint oppose) {
+        return (proposals[_currentProposal].favor, proposals[_currentProposal].oppose);
+    }
+
+    /**
+     * @dev Function to get invester's voted and left vote.
+     * @param _invester the address of invester.
+     * @return amount of invester's voted and total vote of investor.
+     */
+    function getVoteOf(address _invester) private onlyOwner view returns (uint amount, uint total) {
+        return (investors[_invester].voted, investors[_invester].vote);
+    }
 
     /**
      * @dev Function to refund ethereum to invester.
@@ -251,7 +310,6 @@ contract Blocrowd is Ownable {
      * @return boolean flag if open success.
      */
     function invest(address _creator) payable public returns (bool isIndeed) {
-        // delegator also invest at least 1 wei.
         if(_creator!=creator) revert();
         if(block.timestamp>projectPeriod) revert();
         if(msg.value==0) revert();
@@ -266,10 +324,11 @@ contract Blocrowd is Ownable {
         
         // set fund and vote
         investors[msg.sender].fund = investors[msg.sender].fund.add(msg.value);
-        investors[msg.sender].vote = investors[msg.sender].fund.mul(rate);
+        investors[msg.sender].vote = investors[msg.sender].fund.div(rate);
         
-        // add total value
+        // add total value and vote
         totalFund = totalFund.add(msg.value);
+        totalVote = totalVote.add(msg.value.div(rate));
         
         emit Invested(msg.sender, msg.value);
         return true;
@@ -313,6 +372,7 @@ contract Blocrowd is Ownable {
      * @dev Create an additional proposal with peroid, and Quota.
      * @param _proposalIndex the uint to set position of new proposal.
      * @param _period the uint to set peroid of voting.
+     * @param _voteQuorum the uint to set threshold of voting start.
      * @param _voteQuota the uint to set threshold of voting.
      * @param _instalment the uint to set instalment percentage of proposal.
      * @param _instalmentIndex the uint to sub instalment percentage from proposal that is _instalmentIndex.
@@ -324,7 +384,6 @@ contract Blocrowd is Ownable {
         if(_voteQuorum>10000) revert();
         if(_voteQuota>10000) revert();
         if(_instalment>10000-currentInstalmented) revert();
-        if(_instalmentIndex<=currentProposal) revert();
         
         // shift _proposalIndex to numOfProposal's proposals as 1.
         uint count = numOfProposal;
@@ -359,7 +418,7 @@ contract Blocrowd is Ownable {
      */ 
     function delegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
         if(proposals[currentProposal].started == true) revert();
-        if(investors[msg.sender].fund==0) revert();
+        //if(investors[msg.sender].fund==0) revert();
         if(investors[msg.sender].vote<_amountOfVote) revert();
         
         // add vote to _to and sub vote from msg.sender
@@ -370,7 +429,7 @@ contract Blocrowd is Ownable {
         investors[_to].delegated[msg.sender] = investors[_to].delegated[msg.sender].add(_amountOfVote);
         investors[_to].delegatedList.push(msg.sender);
         investors[_to].delegatedvote = investors[_to].delegatedvote.add(_amountOfVote);
-        
+
         emit Delegated(msg.sender, _to, _amountOfVote);
         return true;
     }
@@ -383,7 +442,7 @@ contract Blocrowd is Ownable {
      */ 
     function unDelegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
         if(proposals[currentProposal].started == true) revert();
-        if(investors[msg.sender].fund==0) revert();
+        //if(investors[msg.sender].fund==0) revert();
         if(investors[_to].delegated[msg.sender]<_amountOfVote) revert();
         
         // sub vote from _to and add vote to msg.sender
@@ -425,8 +484,11 @@ contract Blocrowd is Ownable {
         // End proposal
         proposals[currentProposal].started = false;
         
+        // if vote over voteQuota
+        if (proposals[currentProposal].voted < totalVote.mul(proposals[currentProposal].voteQuorum).div(10000)) revert();
+        
         // if pass vote
-        if(proposals[currentProposal].voted >= totalFund.mul(rate).mul(proposals[currentProposal].voteQuota).div(10000))
+        if(proposals[currentProposal].voted >= totalVote.mul(proposals[currentProposal].voteQuota).div(10000))
         {
             // Transfer instalment to creator, and sub remainedFund
             if(!creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
@@ -454,19 +516,25 @@ contract Blocrowd is Ownable {
      * @dev Vote in proposal in currentProposal.
      * @param _isDelegated the bool to check vote is delegated or not.
      * @param _amountOfVote the uint to set the number of vote voted.
+     * @param _isFavor the bool to set favor(true)/oppose(false).
      * @return boolean flag if add success.
      */ 
-    function vote(bool _isDelegated, uint _amountOfVote) public returns (bool isIndeed) {
+    function vote(bool _isDelegated, uint _amountOfVote, bool _isFavor) public returns (bool isIndeed) {
         if(!_isDelegated)   // vote from investor
         {
             if(investors[msg.sender].vote==0) revert();
             if(_amountOfVote>investors[msg.sender].vote.sub(investors[msg.sender].voted)) revert();
         
             // vote
+            if (_isFavor)
+                proposals[currentProposal].favor = proposals[currentProposal].voted.add(_amountOfVote);
+            else
+                proposals[currentProposal].oppose = proposals[currentProposal].voted.add(_amountOfVote);
+
             proposals[currentProposal].voted = proposals[currentProposal].voted.add(_amountOfVote);
             investors[msg.sender].voted = investors[msg.sender].voted.add(_amountOfVote);
             
-            emit Voted(msg.sender, currentProposal, investors[msg.sender].voted, investors[msg.sender].vote.sub(investors[msg.sender].voted));
+            emit Voted(msg.sender, currentProposal, investors[msg.sender].voted, _isFavor, investors[msg.sender].vote.sub(investors[msg.sender].voted));
         }
         else    // vote from delegator
         {
@@ -474,10 +542,15 @@ contract Blocrowd is Ownable {
             if(_amountOfVote>investors[msg.sender].delegatedvote.sub(investors[msg.sender].delegatedVoted)) revert();
         
             // vote
+            if (_isFavor)
+                proposals[currentProposal].favor = proposals[currentProposal].voted.add(_amountOfVote);
+            else
+                proposals[currentProposal].oppose = proposals[currentProposal].voted.add(_amountOfVote);
+
             proposals[currentProposal].voted = proposals[currentProposal].voted.add(_amountOfVote);
             investors[msg.sender].delegatedVoted = investors[msg.sender].delegatedVoted.add(_amountOfVote);
             
-            emit DelegatedVoted(msg.sender, currentProposal, investors[msg.sender].delegatedVoted, investors[msg.sender].delegatedvote.sub(investors[msg.sender].delegatedVoted));
+            emit DelegatedVoted(msg.sender, currentProposal, investors[msg.sender].delegatedVoted, _isFavor, investors[msg.sender].delegatedvote.sub(investors[msg.sender].delegatedVoted));
         }
         
         return true;
