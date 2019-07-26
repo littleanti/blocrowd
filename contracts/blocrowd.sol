@@ -200,10 +200,11 @@ contract Blocrowd is Ownable {
         // Set default values;
         projectName = _projectName;
         creator = _creator;
+        manager = msg.sender;
         softCap = _softCap;
         hardCap = _hardCap;
         rate = _rate;
-        projectPeriod = block.timestamp.add(_projectPeriod); // Unix time
+        projectPeriod = block.timestamp.add(_projectPeriod); // Unix time (s)
         numOfProposal = _period.length;
         currentProposal = 0;
         
@@ -231,7 +232,7 @@ contract Blocrowd is Ownable {
      * @dev Function to get total number of investors.
      * @return total number of investors.
      */
-    function getTotalInvestor() public onlyOwner view returns (uint total) {
+    function getTotalInvestor() public view returns (uint total) {
         return numOfInvestor;
     }
     
@@ -239,7 +240,7 @@ contract Blocrowd is Ownable {
      * @dev Function to get total fund.
      * @return total raised fund.
      */
-    function getTotalFund() public onlyOwner view returns (uint total) {
+    function getTotalFund() public view returns (uint total) {
         return totalFund;
     }
 
@@ -248,7 +249,7 @@ contract Blocrowd is Ownable {
      * @param _invester the address of invester.
      * @return amount of invester's fund.
      */
-    function getFundOf(address _invester) public onlyOwner view returns (uint amount) {
+    function getFundOf(address _invester) public view returns (uint amount) {
         return investors[_invester].fund;
     }
 
@@ -257,7 +258,7 @@ contract Blocrowd is Ownable {
      * @param _currentProposal the current proposal phase among proposals.
      * @return amount of voted and total vote of current proposal.
      */
-    function getStateVote(uint _currentProposal) public onlyOwner view returns (uint amount, uint total) {
+    function getStateVote(uint _currentProposal) public view returns (uint amount, uint total) {
         return (proposals[_currentProposal].voted, totalVote);
     }
 
@@ -266,7 +267,7 @@ contract Blocrowd is Ownable {
      * @param _currentProposal the current proposal phase among proposals.
      * @return amount of voted favor and oppose vote of current proposal.
      */
-    function getResultVote(uint _currentProposal) public onlyOwner view returns (uint favor, uint oppose) {
+    function getResultVote(uint _currentProposal) public view returns (uint favor, uint oppose) {
         return (proposals[_currentProposal].favor, proposals[_currentProposal].oppose);
     }
 
@@ -275,7 +276,7 @@ contract Blocrowd is Ownable {
      * @param _invester the address of invester.
      * @return amount of invester's voted and total vote of investor.
      */
-    function getVoteOf(address _invester) public onlyOwner view returns (uint amount, uint total) {
+    function getVoteOf(address _invester) public view returns (uint amount, uint total) {
         return (investors[_invester].voted, investors[_invester].vote);
     }
 
@@ -297,9 +298,6 @@ contract Blocrowd is Ownable {
             count++;
         }
         
-        // reset totalFund
-        if(!manager.send(totalFund)) revert();
-        
         emit Refunded(investorList[count], investors[investorList[count]].fund);
         return true;
     }
@@ -309,9 +307,10 @@ contract Blocrowd is Ownable {
      * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
-    function invest(address _creator) payable public returns (bool isIndeed) {
+    function invest(address _creator) public payable returns (bool isIndeed) {
         if(_creator!=creator) revert();
-        if(block.timestamp>projectPeriod) revert();
+        //if(block.timestamp>projectPeriod) revert();
+        if(currentProposal!=0) revert();
         if(msg.value==0) revert();
         if(totalFund>hardCap) revert();
         
@@ -339,9 +338,9 @@ contract Blocrowd is Ownable {
      * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
-    function endInvest(address _creator) onlyOwner public returns (bool isIndeed) {
+    function endInvest(address _creator) public onlyOwner returns (bool isIndeed) {
         if(_creator!=creator) revert();
-        if(block.timestamp<=projectPeriod) revert();
+        //if(block.timestamp<=projectPeriod) revert();
         
         // check fund is over softCap or not
         if(totalFund>=softCap)
@@ -351,7 +350,7 @@ contract Blocrowd is Ownable {
             // Transfer first instalment to creator, and sub remainedFund
             if(!creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
             remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
-            // Go to next proposal 
+            // Go to next proposal
             currentProposal++;
             // Increase instalmented fund
             currentInstalmented = currentInstalmented.add(proposals[currentProposal].instalment);
@@ -377,8 +376,8 @@ contract Blocrowd is Ownable {
      * @param _instalment the uint to set instalment percentage of proposal.
      * @param _instalmentIndex the uint to sub instalment percentage from proposal that is _instalmentIndex.
      * @return boolean flag if add success.
-     */ 
-    function addProposal(uint _proposalIndex, uint _period, uint _voteQuorum, uint _voteQuota, uint _instalment, uint _instalmentIndex) onlyOwner public returns(bool isIndeed) {
+     */
+    function addProposal(uint _proposalIndex, uint _period, uint _voteQuorum, uint _voteQuota, uint _instalment, uint _instalmentIndex) public onlyOwner returns(bool isIndeed) {
         if(_proposalIndex<=currentProposal) revert();
         if(_period==0) revert();
         if(_voteQuorum>10000) revert();
@@ -395,7 +394,7 @@ contract Blocrowd is Ownable {
             if(count-1==_instalmentIndex) proposals[count-1].instalment=proposals[count-1].instalment.sub(_instalment);
             proposals[count].instalment = proposals[count-1].instalment;
          
-            count--;   
+            count--;
         }
         
         // add new proposal to _proposalIndex.
@@ -415,10 +414,10 @@ contract Blocrowd is Ownable {
      * @param _to the address to delegate my vote of vote.
      * @param _amountOfVote the uint to set the number of vote delegated.
      * @return boolean flag if add success.
-     */ 
+     */
     function delegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
-        if(proposals[currentProposal].started == true) revert();
-        //if(investors[msg.sender].fund==0) revert();
+        if(proposals[currentProposal].started==true) revert();
+        if(investors[msg.sender].fund==0) revert();
         if(investors[msg.sender].vote<_amountOfVote) revert();
         
         // add vote to _to and sub vote from msg.sender
@@ -439,10 +438,10 @@ contract Blocrowd is Ownable {
      * @param _to the address to undelegate my vote of vote.
      * @param _amountOfVote the uint to set the number of vote undelegated.
      * @return boolean flag if add success.
-     */ 
+     */
     function unDelegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
-        if(proposals[currentProposal].started == true) revert();
-        //if(investors[msg.sender].fund==0) revert();
+        if(proposals[currentProposal].started==true) revert();
+        if(investors[msg.sender].fund==0) revert();
         if(investors[_to].delegated[msg.sender]<_amountOfVote) revert();
         
         // sub vote from _to and add vote to msg.sender
@@ -459,9 +458,10 @@ contract Blocrowd is Ownable {
     /**
      * @dev Start voting in proposal in currentProposal.
      * @return boolean flag if add success.
-     */ 
-    function startProposal() onlyOwner public returns(bool isIndeed) {
+     */
+    function startProposal() public onlyOwner returns(bool isIndeed) {
         if(currentProposal>=numOfProposal) revert();
+        if(proposals[currentProposal].started==true) revert();
         
         // Start proposal
         proposals[currentProposal].started = true;
@@ -476,16 +476,22 @@ contract Blocrowd is Ownable {
     /**
      * @dev End voting in proposal in currentProposal.
      * @return boolean flag if add success.
-     */ 
-    function endProposal() onlyOwner public returns(bool isIndeed) {
+     */
+    function endProposal() public onlyOwner returns(bool isIndeed) {
         if(currentProposal>=numOfProposal) revert();
-        if(block.timestamp<=proposals[currentProposal].peroid) revert();
+        if(proposals[currentProposal].started!=true) revert();
+        //if(block.timestamp<=proposals[currentProposal].peroid) revert();
         
         // End proposal
         proposals[currentProposal].started = false;
         
-        // if vote over voteQuota
-        if (proposals[currentProposal].voted < totalVote.mul(proposals[currentProposal].voteQuorum).div(10000)) revert();
+        // if vote over voteQuorum
+        if (proposals[currentProposal].voted < totalVote.mul(proposals[currentProposal].voteQuorum).div(10000))
+        {
+            // Refund left fund to investors
+            refund(creator, remainedFund);
+            return false;
+        }
         
         // if pass vote
         if(proposals[currentProposal].voted >= totalVote.mul(proposals[currentProposal].voteQuota).div(10000))
@@ -493,13 +499,13 @@ contract Blocrowd is Ownable {
             // Transfer instalment to creator, and sub remainedFund
             if(!creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
             remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
-            
-            // Go to next proposal 
+
+            // Go to next proposal
             currentProposal++;
             
             // Increase instalmented fund
             currentInstalmented = currentInstalmented.add(proposals[currentProposal].instalment);
-    
+
             emit ProposalEnded(creator, currentProposal-1, proposals[currentProposal-1].voted, proposals[currentProposal-1].peroid);
             return true;
         }
@@ -511,15 +517,17 @@ contract Blocrowd is Ownable {
             return false;
         }
     }
-            
+
     /**
      * @dev Vote in proposal in currentProposal.
      * @param _isDelegated the bool to check vote is delegated or not.
      * @param _amountOfVote the uint to set the number of vote voted.
      * @param _isFavor the bool to set favor(true)/oppose(false).
      * @return boolean flag if add success.
-     */ 
+     */
     function vote(bool _isDelegated, uint _amountOfVote, bool _isFavor) public returns (bool isIndeed) {
+        if(proposals[currentProposal].started!=true) revert();
+
         if(!_isDelegated)   // vote from investor
         {
             if(investors[msg.sender].vote==0) revert();
@@ -559,8 +567,8 @@ contract Blocrowd is Ownable {
     /**
      * @dev End project of creator.
      * @return boolean flag if add success.
-     */ 
-    function endProject() onlyOwner public returns (bool isIndeed) {
+     */
+    function endProject() public onlyOwner returns (bool isIndeed) {
         // refund remainedFund to manager (change of fund (ex. less then 1 gwei))
         if(!manager.send(remainedFund)) revert();
             
