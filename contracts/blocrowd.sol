@@ -290,9 +290,9 @@ contract Blocrowd is Ownable {
         if(_amountOfFund>totalFund) revert();
 
         // TODO: Calculate Gas fee
-        uint amountOfFund = _amountOfFund.sub(210000000000000);
-        
-        uint count = 0;
+        uint gasFee = 210000000000000;
+        uint amountOfFund = _amountOfFund.sub(gasFee);
+
         if(!creator.send(amountOfFund)) revert();
         
         emit Funded(creator, amountOfFund);
@@ -308,7 +308,8 @@ contract Blocrowd is Ownable {
         if(_amountOfRefund>totalFund) revert();
 
         // TODO: Calculate Gas fee
-        uint amountOfRefund = _amountOfRefund.sub(210000000000000.mul(numOfInvestor));
+        uint gasFee = 210000000000000;
+        uint amountOfRefund = _amountOfRefund.sub(gasFee.mul(numOfInvestor));
         uint perInvestor = 0;
 
         uint count = 0;
