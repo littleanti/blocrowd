@@ -175,6 +175,7 @@ contract Blocrowd is Ownable {
     // Event for Blocrowd related to fund.
     event Invested(address _investor, uint _fund);
     event Refunded(address _investor, uint _fund);
+    event Funded(address _creator, uint _fund);
     event InvestSuccessed(address _creator, uint _fund, uint _softCap);
     event InvestFailed(address _creator, uint _fund, uint _softCap);
     // Event for Blocrowd related to vote.
@@ -281,34 +282,54 @@ contract Blocrowd is Ownable {
     }
 
     /**
+     * @dev Function to send ethereum to creator.
+     * @param _amountOfFund the uint of fund amount.
+     * @return boolean flag if open success.
+     */
+    function fund(uint _amountOfFund) internal returns (bool isIndeed) {
+        if(_amountOfFund>totalFund) revert();
+
+        // TODO: Calculate Gas fee
+        uint amountOfFund = _amountOfFund.sub(210000000000000);
+        
+        uint count = 0;
+        if(!creator.send(amountOfFund)) revert();
+        
+        emit Funded(creator, amountOfFund);
+        return true;
+    }
+
+    /**
      * @dev Function to refund ethereum to invester.
-     * @param _creator the address of creator.
      * @param _amountOfRefund the uint of refund amount.
      * @return boolean flag if open success.
      */
-    function refund(address _creator, uint _amountOfRefund) internal returns (bool isIndeed) {
-        if(_creator!=creator) revert();
+    function refund(uint _amountOfRefund) internal returns (bool isIndeed) {
         if(_amountOfRefund>totalFund) revert();
-        
+
+        // TODO: Calculate Gas fee
+        uint amountOfRefund = _amountOfRefund.sub(210000000000000.mul(numOfInvestor));
+        uint perInvestor = 0;
+
         uint count = 0;
         while(count < numOfInvestor)
         {
-            if(!investorList[count].send(investors[investorList[count]].fund.mul(_amountOfRefund).div(totalFund))) revert();
-            totalFund = totalFund.sub(investors[investorList[count]].fund.mul(_amountOfRefund).div(totalFund));
+            perInvestor = investors[investorList[count]].fund.mul(amountOfRefund).div(totalFund);
+            if(!investorList[count].send(perInvestor)) revert();
+            totalFund = totalFund.sub(perInvestor);
             count++;
+
+            emit Refunded(investorList[count], perInvestor);
         }
         
-        emit Refunded(investorList[count], investors[investorList[count]].fund);
         return true;
     }
     
     /**
      * @dev Function to invest ethereum to _creator
-     * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
-    function invest(address _creator) public payable returns (bool isIndeed) {
-        if(_creator!=creator) revert();
+    function invest() public payable returns (bool isIndeed) {
         //if(block.timestamp>projectPeriod) revert();
         if(currentProposal!=0) revert();
         if(msg.value==0) revert();
@@ -335,11 +356,10 @@ contract Blocrowd is Ownable {
     
     /**
      * @dev Function to end invest from _creator
-     * @param _creator the address of creator.
      * @return boolean flag if open success.
      */
-    function endInvest(address _creator) public onlyOwner returns (bool isIndeed) {
-        if(_creator!=creator) revert();
+    function endInvest() public onlyOwner returns (bool isIndeed) {
+        if(currentProposal!=0) revert();
         //if(block.timestamp<=projectPeriod) revert();
         
         // check fund is over softCap or not
@@ -348,8 +368,9 @@ contract Blocrowd is Ownable {
             // start project
             remainedFund = totalFund;
             // Transfer first instalment to creator, and sub remainedFund
-            if(!creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
-            remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
+            
+            if(fund(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
+            remainedFund = remainedFund.sub(remainedFund.mul(proposals[currentProposal].instalment).div(10000));
             // Go to next proposal
             currentProposal++;
             // Increase instalmented fund
@@ -361,7 +382,7 @@ contract Blocrowd is Ownable {
         else
         {
             // refund fund
-            refund(creator, totalFund);
+            refund(totalFund);
             emit InvestFailed(creator, totalFund, softCap);
             return false;
         }
@@ -489,7 +510,7 @@ contract Blocrowd is Ownable {
         if (proposals[currentProposal].voted < totalVote.mul(proposals[currentProposal].voteQuorum).div(10000))
         {
             // Refund left fund to investors
-            refund(creator, remainedFund);
+            refund(remainedFund);
             return false;
         }
         
@@ -497,7 +518,8 @@ contract Blocrowd is Ownable {
         if(proposals[currentProposal].voted >= totalVote.mul(proposals[currentProposal].voteQuota).div(10000))
         {
             // Transfer instalment to creator, and sub remainedFund
-            if(!creator.send(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
+            // Gas fee
+            if(fund(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
             remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
 
             // Go to next proposal
@@ -513,7 +535,7 @@ contract Blocrowd is Ownable {
         else
         {
             // Refund left fund to investors
-            refund(creator, remainedFund);
+            refund(remainedFund);
             return false;
         }
     }
@@ -570,7 +592,7 @@ contract Blocrowd is Ownable {
      */
     function endProject() public onlyOwner returns (bool isIndeed) {
         // refund remainedFund to manager (change of fund (ex. less then 1 gwei))
-        if(!manager.send(remainedFund)) revert();
+        selfdestruct(manager);
             
         emit EndProject(creator, totalFund, numOfProposal, numOfInvestor);
         return true;
