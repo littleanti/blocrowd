@@ -168,6 +168,7 @@ contract Blocrowd is Ownable {
     uint public hardCap;        // wei
     uint public rate;           // 10^18 wei / rate = num of vote
     uint public projectPeriod;  // unix timestamp
+    bool public projectStarted; // project started: true, not yet: false
 
     // Project Desc.
     string public projectName;
@@ -208,6 +209,7 @@ contract Blocrowd is Ownable {
         projectPeriod = block.timestamp.add(_projectPeriod); // Unix time (s)
         numOfProposal = _period.length;
         currentProposal = 0;
+        projectStarted = false;
         
         // Set proposals
         uint instalmentChecker = 0;
@@ -293,7 +295,7 @@ contract Blocrowd is Ownable {
         uint gasFee = 210000000000000;
         uint amountOfFund = _amountOfFund.sub(gasFee);
 
-        if(!creator.send(amountOfFund)) revert();
+        creator.transfer(amountOfFund);
         
         emit Funded(creator, amountOfFund);
         return true;
@@ -316,7 +318,7 @@ contract Blocrowd is Ownable {
         while(count < numOfInvestor)
         {
             perInvestor = investors[investorList[count]].fund.mul(amountOfRefund).div(totalFund);
-            if(!investorList[count].send(perInvestor)) revert();
+            investorList[count].transfer(perInvestor);
             totalFund = totalFund.sub(perInvestor);
             count++;
 
@@ -371,11 +373,13 @@ contract Blocrowd is Ownable {
             // Transfer first instalment to creator, and sub remainedFund
             
             if(fund(totalFund.mul(proposals[currentProposal].instalment).div(10000))) revert();
-            remainedFund = remainedFund.sub(remainedFund.mul(proposals[currentProposal].instalment).div(10000));
+            remainedFund = remainedFund.sub(totalFund.mul(proposals[currentProposal].instalment).div(10000));
             // Go to next proposal
             currentProposal++;
             // Increase instalmented fund
             currentInstalmented = currentInstalmented.add(proposals[currentProposal].instalment);
+            // Start Project 
+            projectStarted = true;
             
             emit InvestSuccessed(creator, totalFund, softCap);
             return true;
@@ -438,6 +442,7 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */
     function delegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
+        if(projectStarted!=true) revert();
         if(proposals[currentProposal].started==true) revert();
         if(investors[msg.sender].fund==0) revert();
         if(investors[msg.sender].vote<_amountOfVote) revert();
@@ -462,6 +467,7 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */
     function unDelegate(address _to, uint _amountOfVote) public returns(bool isIndeed) {
+        if(projectStarted!=true) revert();
         if(proposals[currentProposal].started==true) revert();
         if(investors[msg.sender].fund==0) revert();
         if(investors[_to].delegated[msg.sender]<_amountOfVote) revert();
@@ -482,6 +488,7 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */
     function startProposal() public onlyOwner returns(bool isIndeed) {
+        if(projectStarted!=true) revert();
         if(currentProposal>=numOfProposal) revert();
         if(proposals[currentProposal].started==true) revert();
         
@@ -500,6 +507,7 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */
     function endProposal() public onlyOwner returns(bool isIndeed) {
+        if(projectStarted!=true) revert();
         if(currentProposal>=numOfProposal) revert();
         if(proposals[currentProposal].started!=true) revert();
         //if(block.timestamp<=proposals[currentProposal].peroid) revert();
@@ -592,6 +600,8 @@ contract Blocrowd is Ownable {
      * @return boolean flag if add success.
      */
     function endProject() public onlyOwner returns (bool isIndeed) {
+        if(projectStarted!=true) revert();
+
         // refund remainedFund to manager (change of fund (ex. less then 1 gwei))
         selfdestruct(manager);
             
