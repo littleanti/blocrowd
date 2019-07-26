@@ -231,7 +231,7 @@ contract Blocrowd is Ownable {
      * @dev Function to get total number of investors.
      * @return total number of investors.
      */
-    function getTotalInvestor() private onlyOwner view returns (uint total) {
+    function getTotalInvestor() public onlyOwner view returns (uint total) {
         return numOfInvestor;
     }
     
@@ -239,7 +239,7 @@ contract Blocrowd is Ownable {
      * @dev Function to get total fund.
      * @return total raised fund.
      */
-    function getTotalFund() private onlyOwner view returns (uint total) {
+    function getTotalFund() public onlyOwner view returns (uint total) {
         return totalFund;
     }
 
@@ -248,7 +248,7 @@ contract Blocrowd is Ownable {
      * @param _invester the address of invester.
      * @return amount of invester's fund.
      */
-    function getFundOf(address _invester) private onlyOwner view returns (uint amount) {
+    function getFundOf(address _invester) public onlyOwner view returns (uint amount) {
         return investors[_invester].fund;
     }
 
@@ -257,7 +257,7 @@ contract Blocrowd is Ownable {
      * @param _currentProposal the current proposal phase among proposals.
      * @return amount of voted and total vote of current proposal.
      */
-    function getStateVote(uint _currentProposal) private onlyOwner view returns (uint amount, uint total) {
+    function getStateVote(uint _currentProposal) public onlyOwner view returns (uint amount, uint total) {
         return (proposals[_currentProposal].voted, totalVote);
     }
 
@@ -266,7 +266,7 @@ contract Blocrowd is Ownable {
      * @param _currentProposal the current proposal phase among proposals.
      * @return amount of voted favor and oppose vote of current proposal.
      */
-    function getResultVote(uint _currentProposal) private onlyOwner view returns (uint favor, uint oppose) {
+    function getResultVote(uint _currentProposal) public onlyOwner view returns (uint favor, uint oppose) {
         return (proposals[_currentProposal].favor, proposals[_currentProposal].oppose);
     }
 
@@ -275,7 +275,7 @@ contract Blocrowd is Ownable {
      * @param _invester the address of invester.
      * @return amount of invester's voted and total vote of investor.
      */
-    function getVoteOf(address _invester) private onlyOwner view returns (uint amount, uint total) {
+    function getVoteOf(address _invester) public onlyOwner view returns (uint amount, uint total) {
         return (investors[_invester].voted, investors[_invester].vote);
     }
 
